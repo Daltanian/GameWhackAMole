@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Whack-A-Mole (Numpad 7-9 / 4-6 / 1-3)</title>
+<title>Whack-A-Mole Deluxe</title>
 <style>
   :root {
     --cell-size: 110px;
@@ -11,6 +11,9 @@
     --board-pad: 18px;
     --dirt: #2a1d0a;
     --accent: #ffd34e;
+    --good: #8fff89;
+    --warn: #ffbf69;
+    --bad: #ff6b6b;
   }
   * { box-sizing: border-box; }
   body {
@@ -22,15 +25,23 @@
     color: #fff;
     background: linear-gradient(#2f7e2f 55px, var(--dirt) 55px) no-repeat;
   }
-  .wrap { display: grid; gap: 14px; justify-items: center; }
-  .hud { display: flex; gap: 14px; flex-wrap: wrap; }
+  .wrap { display: grid; gap: 14px; justify-items: center; padding: 18px; }
+  .hud {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
   .chip {
-    background: rgba(0,0,0,0.28);
+    background: rgba(0,0,0,0.32);
     padding: 8px 12px;
     border-radius: 999px;
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
-  .chip strong { color: var(--accent); }
+  .chip strong { color: var(--accent); min-width: 36px; text-align: center; }
   .board {
     background: var(--dirt);
     padding: var(--board-pad);
@@ -50,12 +61,13 @@
     background: radial-gradient(60% 60% at 50% 45%, #3e2f1c 0%, #2f2314 60%, #1f170d 100%);
     box-shadow: inset 0 8px 16px rgba(0,0,0,0.6);
     user-select: none;
+    overflow: hidden;
   }
   .cell .legend {
     position: absolute;
     top: 6px;
     left: 10px;
-    opacity: 0.28;
+    opacity: 0.32;
     font-weight: 700;
     font-size: 0.95rem;
     pointer-events: none;
@@ -82,28 +94,81 @@
     font-size: 2.4rem;
     animation: smack 220ms ease-out;
   }
+  .cell.missed::after {
+    content: "💨";
+    position: absolute;
+    left: 50%;
+    bottom: 18px;
+    transform: translate(-50%, 0);
+    font-size: 2.2rem;
+    animation: vanish 260ms ease-out;
+  }
   @keyframes smack {
     from { transform: translate(-50%, 0) scale(1.4); opacity: 1; }
     to   { transform: translate(-50%, 0) scale(0.6); opacity: 0; }
   }
-  .controls { display: flex; gap: 10px; margin-top: 8px; }
+  @keyframes vanish {
+    from { transform: translate(-50%, 0) scale(1.1); opacity: 0.8; }
+    to   { transform: translate(-50%, -12px) scale(0.7); opacity: 0; }
+  }
+  .status {
+    min-height: 26px;
+    font-weight: 700;
+    text-align: center;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  }
+  .status[data-kind="info"] { color: var(--accent); }
+  .status[data-kind="success"] { color: var(--good); }
+  .status[data-kind="warn"] { color: var(--warn); }
+  .status[data-kind="error"] { color: var(--bad); }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 4px;
+  }
   button {
-    border: none; border-radius: 10px;
-    padding: 10px 14px;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 16px;
     font-weight: 700;
     background: linear-gradient(#444, #2c2c2c);
     color: #fff;
     cursor: pointer;
+    transition: transform 120ms ease;
   }
+  button.secondary { background: linear-gradient(#555, #383838); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button:not(:disabled):active { transform: translateY(1px); }
   .overlay {
-    position: fixed; inset: 0; display: grid; place-items: center;
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
     background: rgba(0,0,0,0.6);
+    padding: 18px;
   }
   .dialog {
-    background: #1e1e1e; border-radius: 16px; padding: 18px; width: 320px;
+    background: #1e1e1e;
+    border-radius: 16px;
+    padding: 18px 22px;
+    width: min(360px, 90vw);
     text-align: center;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.4);
   }
+  .dialog h1 { margin-top: 0; }
+  .summary {
+    list-style: none;
+    padding: 0;
+    margin: 14px 0;
+    text-align: left;
+    background: rgba(255,255,255,0.04);
+    border-radius: 12px;
+    padding: 12px 16px;
+  }
+  .summary li { margin: 4px 0; }
+  .summary.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -112,142 +177,537 @@
     <div class="chip">Score: <strong id="score">0</strong></div>
     <div class="chip">Best: <strong id="best">0</strong></div>
     <div class="chip">Time: <strong id="timer">30</strong>s</div>
+    <div class="chip">Lives: <strong id="lives">❤️❤️❤️</strong></div>
+    <div class="chip">Streak: <strong id="streak">0</strong></div>
+    <div class="chip">Multiplier: <strong id="multiplier">x1</strong></div>
+    <div class="chip">Accuracy: <strong id="accuracy">--</strong></div>
   </div>
-  <div class="board"><div class="grid" id="grid"></div></div>
+  <div class="status" id="status" data-kind="info">Ready to play! Use the numpad or click to whack moles.</div>
+  <div class="board"><div class="grid" id="grid" aria-label="Whack-A-Mole board"></div></div>
   <div class="controls">
     <button id="startBtn">Start</button>
     <button id="restartBtn" disabled>Restart</button>
+    <button id="soundBtn" class="secondary">Sound: On</button>
   </div>
 </div>
 <div class="overlay" id="overlay">
   <div class="dialog">
     <h1>Whack-A-Mole</h1>
-    <p>Use NUMPAD 7-9 / 4-6 / 1-3 to whack moles.</p>
+    <p id="overlayMessage">Use NUMPAD 7-9 / 4-6 / 1-3 or click the holes to whack moles. Gold moles are worth extra points, bombs cost you!</p>
+    <ul id="overlaySummary" class="summary hidden"></ul>
     <button id="overlayStart">Play</button>
   </div>
 </div>
 <script>
 (() => {
   const GAME_DURATION = 30;
-  const SPAWN_INTERVAL_MS = 1500;
+  const MAX_LIVES = 3;
+  const MOLE_LIFESPAN_MS = 1500;
+  const INITIAL_RESPAWN_DELAY_MS = 900;
+  const MIN_RESPAWN_DELAY_MS = 350;
+  const SPAWN_ACCELERATION_MS = 14;
+  const MULTIPLIER_STEP = 5;
+  const STATUS_DISPLAY_MS = 2600;
+  const BOMB_LIFE_LOSS = 1;
+  const MISS_LIFE_LOSS = 1;
+  const DEFAULT_STATUS = 'Ready to play! Use the numpad or click to whack moles.';
 
   const gridEl = document.getElementById('grid');
   const scoreEl = document.getElementById('score');
   const bestEl = document.getElementById('best');
   const timerEl = document.getElementById('timer');
+  const livesEl = document.getElementById('lives');
+  const streakEl = document.getElementById('streak');
+  const multiplierEl = document.getElementById('multiplier');
+  const accuracyEl = document.getElementById('accuracy');
+  const statusEl = document.getElementById('status');
   const startBtn = document.getElementById('startBtn');
   const restartBtn = document.getElementById('restartBtn');
+  const soundBtn = document.getElementById('soundBtn');
   const overlay = document.getElementById('overlay');
   const overlayStart = document.getElementById('overlayStart');
+  const overlayMessage = document.getElementById('overlayMessage');
+  const overlaySummary = document.getElementById('overlaySummary');
 
-  let running = false, score = 0, best = 0, timeLeft = GAME_DURATION;
-  let activeIndex = null, spawnTimer = null, gameTimer = null;
-  const cells = [];
   const keypadLabels = ['7','8','9','4','5','6','1','2','3'];
+  const keyToIndex = {'1':6,'2':7,'3':8,'4':3,'5':4,'6':5,'7':0,'8':1,'9':2};
 
-  best = parseInt(localStorage.getItem('whack_best')||'0',10);
+  const cells = [];
+  let running = false;
+  let score = 0;
+  let best = 0;
+  let timeLeft = GAME_DURATION;
+  let lives = MAX_LIVES;
+  let streak = 0;
+  let multiplier = 1;
+  let maxStreak = 0;
+  let hits = 0;
+  let misses = 0;
+  let bombsHit = 0;
+  let spawnTimer = null;
+  let gameTimer = null;
+  let statusTimer = null;
+  let molesResolved = 0;
+  let activeMole = null;
+
+  best = parseInt(localStorage.getItem('whack_best') || '0', 10);
   bestEl.textContent = best;
 
-  // Build grid
-  for (let i=0;i<9;i++){
-    const c=document.createElement('div');
-    c.className='cell'; c.dataset.index=i;
-    const num=document.createElement('div');
-    num.className='legend'; num.textContent=keypadLabels[i];
-    c.appendChild(num);
-    c.addEventListener('click',()=>tryWhack(i));
-    gridEl.appendChild(c); cells.push(c);
+  function createLegend(idx) {
+    const legend = document.createElement('div');
+    legend.className = 'legend';
+    legend.textContent = keypadLabels[idx];
+    return legend;
   }
 
-  function clearActiveCell(){
-    if(activeIndex===null) return;
-    const cell=cells[activeIndex];
-    cell.className='cell';
-    cell.innerHTML='<div class="legend">'+keypadLabels[activeIndex]+'</div>';
-    activeIndex=null;
-  }
-
-  function spawnMole(){
-    clearActiveCell();
-    const idx=Math.floor(Math.random()*9);
-    const cell=cells[idx];
-    let type,symbol;
-    const r=Math.random();
-    if(r<0.7){type='normal';symbol='🐹';}
-    else if(r<0.9){type='gold';symbol='🐹✨';}
-    else{type='bomb';symbol='💣';}
-    cell.dataset.type=type;
-    cell.classList.add('active');
-    const sprite=document.createElement('span');
-    sprite.className='sprite'; sprite.textContent=symbol;
-    cell.appendChild(sprite);
-    activeIndex=idx;
-  }
-
-  function tryWhack(idx){
-    if(!running||activeIndex===null) return;
-    if(idx!==activeIndex) return;
-    const cell=cells[idx]; const type=cell.dataset.type||'normal';
-    if(type==='normal') score+=1;
-    else if(type==='gold') score+=3;
-    else if(type==='bomb') score-=2;
-    updateScore();
-    cell.classList.add('hit'); cell.innerHTML='';
-    setTimeout(()=>clearActiveCell(),220);
-  }
-
-  function updateScore(){
-    scoreEl.textContent=score;
-    if(score>best){best=score;bestEl.textContent=best;localStorage.setItem('whack_best',best);}
-  }
-
-  function tick(){
-    timerEl.textContent=timeLeft;
-    if(timeLeft<=0){endGame();return;}
-    timeLeft-=1;
-  }
-
-  function startGame(){
-    if(running) return;
-    running=true; score=0; timeLeft=GAME_DURATION;
-    updateScore(); timerEl.textContent=timeLeft;
-    clearActiveCell();
-    spawnMole();
-    spawnTimer=setInterval(spawnMole,SPAWN_INTERVAL_MS);
-    gameTimer=setInterval(tick,1000);
-    startBtn.disabled=true; restartBtn.disabled=false;
-  }
-
-  function endGame(){
-    running=false;
-    clearInterval(spawnTimer); clearInterval(gameTimer);
-    spawnTimer=null; gameTimer=null;
-    clearActiveCell();
-    startBtn.disabled=false; restartBtn.disabled=false;
-    overlay.style.display='grid';
-    overlay.querySelector('h1').textContent='Game Over';
-    overlay.querySelector('p').textContent='Final Score: '+score;
-  }
-
-  // Key mapping (bug fix: check !== undefined)
-  const keyToIndex={'1':6,'2':7,'3':8,'4':3,'5':4,'6':5,'7':0,'8':1,'9':2};
-  function keyIndexFromEvent(e){
-    if(e.code && e.code.startsWith('Numpad')){
-      const num=parseInt(e.code.replace('Numpad',''),10);
-      if(keyToIndex[num]!==undefined) return keyToIndex[num];
+  function ensureLegend(cell, idx) {
+    let legend = cell.querySelector('.legend');
+    if (!legend) {
+      legend = createLegend(idx);
+      cell.appendChild(legend);
+    } else {
+      legend.textContent = keypadLabels[idx];
     }
-    if(keyToIndex[e.key]!==undefined) return keyToIndex[e.key];
+  }
+
+  function cleanupCell(cell, idx) {
+    cell.classList.remove('active', 'hit', 'missed');
+    const sprite = cell.querySelector('.sprite');
+    if (sprite) sprite.remove();
+    delete cell.dataset.type;
+    ensureLegend(cell, idx);
+  }
+
+  function consumeActiveMole(idx) {
+    if (!activeMole || activeMole.index !== idx) return null;
+    clearTimeout(activeMole.despawnTimer);
+    const mole = activeMole;
+    activeMole = null;
+    return mole;
+  }
+
+  function clearActiveMole() {
+    if (!activeMole) return;
+    const idx = activeMole.index;
+    consumeActiveMole(idx);
+    cleanupCell(cells[idx], idx);
+  }
+
+  function computeAccuracy() {
+    const total = hits + misses;
+    if (total === 0) return '--';
+    return Math.round((hits / total) * 100) + '%';
+  }
+
+  function updateMultiplier() {
+    multiplier = 1 + Math.floor(streak / MULTIPLIER_STEP);
+  }
+
+  function refreshHud() {
+    scoreEl.textContent = score;
+    if (score > best) {
+      best = score;
+      bestEl.textContent = best;
+      localStorage.setItem('whack_best', best);
+    }
+    timerEl.textContent = Math.max(0, Math.round(timeLeft));
+    livesEl.textContent = lives > 0 ? '❤️'.repeat(lives) + '🖤'.repeat(MAX_LIVES - lives) : '💀';
+    streakEl.textContent = streak;
+    multiplierEl.textContent = 'x' + multiplier;
+    accuracyEl.textContent = computeAccuracy();
+  }
+
+  function resetStatus() {
+    statusEl.textContent = DEFAULT_STATUS;
+    statusEl.dataset.kind = 'info';
+  }
+
+  function setStatus(message, kind = 'info', persist = false) {
+    statusEl.textContent = message;
+    statusEl.dataset.kind = kind;
+    if (statusTimer) {
+      clearTimeout(statusTimer);
+      statusTimer = null;
+    }
+    if (!persist) {
+      statusTimer = setTimeout(resetStatus, STATUS_DISPLAY_MS);
+    }
+  }
+
+  function clearTimers() {
+    if (spawnTimer) {
+      clearTimeout(spawnTimer);
+      spawnTimer = null;
+    }
+    if (gameTimer) {
+      clearInterval(gameTimer);
+      gameTimer = null;
+    }
+    if (statusTimer) {
+      clearTimeout(statusTimer);
+      statusTimer = null;
+    }
+  }
+
+  function scheduleNextSpawn(extraDelay = 0) {
+    if (!running) return;
+    if (spawnTimer) clearTimeout(spawnTimer);
+    const difficultySteps = Math.min(molesResolved, 25);
+    const baseDelay = Math.max(MIN_RESPAWN_DELAY_MS, INITIAL_RESPAWN_DELAY_MS - difficultySteps * SPAWN_ACCELERATION_MS);
+    spawnTimer = setTimeout(() => {
+      spawnTimer = null;
+      if (running) spawnMole();
+    }, baseDelay + extraDelay);
+  }
+
+  function spawnMole() {
+    clearActiveMole();
+    const idx = Math.floor(Math.random() * 9);
+    const cell = cells[idx];
+
+    const roll = Math.random();
+    let type, symbol;
+    if (roll < 0.7) {
+      type = 'normal';
+      symbol = '🐹';
+    } else if (roll < 0.9) {
+      type = 'gold';
+      symbol = '🐹✨';
+    } else {
+      type = 'bomb';
+      symbol = '💣';
+    }
+
+    cell.dataset.type = type;
+    cell.classList.add('active');
+    const sprite = document.createElement('span');
+    sprite.className = 'sprite';
+    sprite.textContent = symbol;
+    cell.appendChild(sprite);
+
+    const despawnTimer = setTimeout(() => handleMiss(idx), MOLE_LIFESPAN_MS);
+    activeMole = { index: idx, type, despawnTimer };
+
+    setStatus(type === 'bomb' ? 'Careful! A bomb popped up!' : 'A mole appears!', type === 'bomb' ? 'warn' : 'info');
+  }
+
+  function applyLifeLoss(amount) {
+    lives = Math.max(0, lives - amount);
+    if (lives === 0) {
+      refreshHud();
+      endGame('No more lives! The moles win.');
+      return false;
+    }
+    refreshHud();
+    return true;
+  }
+
+  function handleMiss(idx) {
+    const mole = consumeActiveMole(idx);
+    if (!mole) return;
+    const cell = cells[idx];
+    cleanupCell(cell, idx);
+    cell.classList.add('missed');
+    setTimeout(() => cell.classList.remove('missed'), 280);
+    maxStreak = Math.max(maxStreak, streak);
+    streak = 0;
+    updateMultiplier();
+    misses += 1;
+    audio.playMiss();
+    setStatus('Missed! The mole got away.', 'warn');
+    molesResolved += 1;
+    if (!applyLifeLoss(MISS_LIFE_LOSS)) return;
+    if (running) scheduleNextSpawn(120);
+  }
+
+  function endGame(message) {
+    if (!running) {
+      overlayMessage.textContent = message;
+      overlaySummary.classList.remove('hidden');
+      overlay.style.display = 'grid';
+      overlayStart.textContent = 'Play again';
+      return;
+    }
+
+    running = false;
+    clearTimers();
+    clearActiveMole();
+    audio.stopBackground();
+    timeLeft = Math.max(0, timeLeft);
+    maxStreak = Math.max(maxStreak, streak);
+    refreshHud();
+
+    setStatus(message, 'warn', true);
+    overlayMessage.textContent = message;
+    overlaySummary.innerHTML = `
+      <li><strong>Score:</strong> ${score}</li>
+      <li><strong>Best:</strong> ${best}</li>
+      <li><strong>Accuracy:</strong> ${computeAccuracy()}</li>
+      <li><strong>Max streak:</strong> ${maxStreak}</li>
+      <li><strong>Bombs triggered:</strong> ${bombsHit}</li>
+      <li><strong>Moles escaped:</strong> ${misses}</li>`;
+    overlaySummary.classList.remove('hidden');
+    overlay.style.display = 'grid';
+    overlayStart.textContent = 'Play again';
+    startBtn.disabled = false;
+    restartBtn.disabled = false;
+  }
+
+  function finishHit(cell, idx) {
+    cell.classList.add('hit');
+    const sprite = cell.querySelector('.sprite');
+    if (sprite) sprite.remove();
+    setTimeout(() => {
+      cell.classList.remove('hit');
+      cleanupCell(cell, idx);
+    }, 220);
+  }
+
+  function tryWhack(idx) {
+    if (!running) return;
+    const mole = consumeActiveMole(idx);
+    if (!mole) {
+      setStatus('Nothing there! Aim carefully.', 'warn');
+      audio.playEmpty();
+      return;
+    }
+
+    const cell = cells[idx];
+    const type = mole.type || 'normal';
+    finishHit(cell, idx);
+
+    let basePoints = 0;
+    let statusKind = 'success';
+    let statusMessage = '';
+
+    if (type === 'normal') {
+      basePoints = 1;
+      hits += 1;
+      streak += 1;
+      maxStreak = Math.max(maxStreak, streak);
+      audio.playHit();
+      statusMessage = 'Nice hit!';
+    } else if (type === 'gold') {
+      basePoints = 3;
+      hits += 1;
+      streak += 1;
+      maxStreak = Math.max(maxStreak, streak);
+      audio.playGold();
+      statusMessage = 'Golden mole!';
+    } else if (type === 'bomb') {
+      basePoints = -2;
+      bombsHit += 1;
+      maxStreak = Math.max(maxStreak, streak);
+      streak = 0;
+      updateMultiplier();
+      audio.playBomb();
+      statusMessage = 'Kaboom! You hit a bomb. -2 pts';
+      statusKind = 'error';
+      molesResolved += 1;
+      score = Math.max(0, score + basePoints);
+      setStatus(statusMessage, statusKind);
+      if (!applyLifeLoss(BOMB_LIFE_LOSS)) return;
+      if (running) scheduleNextSpawn(220);
+      return;
+    }
+
+    updateMultiplier();
+    const pointsEarned = Math.max(0, basePoints) * multiplier;
+    score = Math.max(0, score + pointsEarned);
+    refreshHud();
+    statusMessage += ` +${pointsEarned} pts (x${multiplier})`;
+    setStatus(statusMessage, statusKind);
+
+    molesResolved += 1;
+    if (running) scheduleNextSpawn(180);
+  }
+
+  function tick() {
+    if (!running) return;
+    timeLeft -= 1;
+    if (timeLeft <= 0) {
+      timeLeft = 0;
+      refreshHud();
+      endGame('Time is up!');
+      return;
+    }
+    refreshHud();
+  }
+
+  function startGame() {
+    clearTimers();
+    clearActiveMole();
+    running = true;
+    overlay.style.display = 'none';
+    overlaySummary.classList.add('hidden');
+    overlayMessage.textContent = 'Keep whacking!';
+
+    score = 0;
+    timeLeft = GAME_DURATION;
+    lives = MAX_LIVES;
+    streak = 0;
+    multiplier = 1;
+    maxStreak = 0;
+    hits = 0;
+    misses = 0;
+    bombsHit = 0;
+    molesResolved = 0;
+
+    refreshHud();
+    resetStatus();
+    setStatus('Game on! Watch out for bombs.', 'info');
+
+    startBtn.disabled = true;
+    restartBtn.disabled = false;
+
+    scheduleNextSpawn(400);
+    gameTimer = setInterval(tick, 1000);
+    if (audio.enabled) {
+      audio.ensureContext();
+      audio.startBackground();
+    }
+  }
+
+  function keyIndexFromEvent(e) {
+    if (e.code && e.code.startsWith('Numpad')) {
+      const num = e.code.replace('Numpad', '');
+      if (keyToIndex[num] !== undefined) return keyToIndex[num];
+    }
+    if (keyToIndex[e.key] !== undefined) return keyToIndex[e.key];
     return null;
   }
 
-  document.addEventListener('keydown',e=>{
-    const idx=keyIndexFromEvent(e);
-    if(idx!==null){e.preventDefault();tryWhack(idx);}
+  const audio = (() => {
+    let context = null;
+    let enabled = true;
+    let backgroundTimer = null;
+
+    function ensureContext() {
+      if (!enabled) return null;
+      if (!context) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return null;
+        context = new Ctx();
+      }
+      if (context.state === 'suspended') context.resume();
+      return context;
+    }
+
+    function playTone({ frequency = 440, type = 'sine', duration = 0.15, volume = 0.15 } = {}) {
+      if (!enabled) return;
+      const ctx = ensureContext();
+      if (!ctx) return;
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = type;
+      oscillator.frequency.value = frequency;
+      gain.gain.value = volume;
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start();
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      oscillator.stop(ctx.currentTime + duration);
+    }
+
+    function playHit() { playTone({ frequency: 560, type: 'triangle', duration: 0.13, volume: 0.18 }); }
+    function playGold() {
+      playTone({ frequency: 720, type: 'square', duration: 0.18, volume: 0.22 });
+      playTone({ frequency: 960, type: 'sine', duration: 0.2, volume: 0.12 });
+    }
+    function playMiss() { playTone({ frequency: 220, type: 'sawtooth', duration: 0.24, volume: 0.16 }); }
+    function playBomb() {
+      playTone({ frequency: 140, type: 'square', duration: 0.35, volume: 0.22 });
+      playTone({ frequency: 70, type: 'sine', duration: 0.4, volume: 0.16 });
+    }
+    function playEmpty() { playTone({ frequency: 340, type: 'sine', duration: 0.08, volume: 0.1 }); }
+
+    function startBackground() {
+      if (!enabled || backgroundTimer) return;
+      const ctx = ensureContext();
+      if (!ctx) return;
+      backgroundTimer = setInterval(() => {
+        playTone({ frequency: 180 + Math.random() * 80, type: 'sine', duration: 0.45, volume: 0.06 });
+      }, 1800);
+    }
+
+    function stopBackground() {
+      if (backgroundTimer) {
+        clearInterval(backgroundTimer);
+        backgroundTimer = null;
+      }
+    }
+
+    function toggle() {
+      enabled = !enabled;
+      if (!enabled) {
+        stopBackground();
+      }
+      return enabled;
+    }
+
+    return {
+      ensureContext,
+      playHit,
+      playGold,
+      playMiss,
+      playBomb,
+      playEmpty,
+      startBackground,
+      stopBackground,
+      toggle,
+      get enabled() { return enabled; }
+    };
+  })();
+
+  function updateSoundButton() {
+    soundBtn.textContent = audio.enabled ? 'Sound: On' : 'Sound: Off';
+  }
+
+  // Build grid
+  for (let i = 0; i < 9; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.dataset.index = i;
+    cell.appendChild(createLegend(i));
+    cell.addEventListener('click', () => tryWhack(i));
+    gridEl.appendChild(cell);
+    cells.push(cell);
+  }
+
+  document.addEventListener('keydown', (e) => {
+    const idx = keyIndexFromEvent(e);
+    if (idx !== null) {
+      e.preventDefault();
+      tryWhack(idx);
+    }
   });
 
-  overlayStart.addEventListener('click',()=>{overlay.style.display='none';startGame();});
-  startBtn.addEventListener('click',()=>{overlay.style.display='none';startGame();});
-  restartBtn.addEventListener('click',()=>{overlay.style.display='none';startGame();});
+  overlayStart.addEventListener('click', () => {
+    overlay.style.display = 'none';
+    startGame();
+  });
+
+  startBtn.addEventListener('click', () => {
+    overlay.style.display = 'none';
+    startGame();
+  });
+
+  restartBtn.addEventListener('click', () => {
+    overlay.style.display = 'none';
+    startGame();
+  });
+
+  soundBtn.addEventListener('click', () => {
+    const enabled = audio.toggle();
+    if (enabled && running) {
+      audio.ensureContext();
+      audio.startBackground();
+    }
+    updateSoundButton();
+  });
+
+  updateSoundButton();
+  resetStatus();
 })();
 </script>
 </body>

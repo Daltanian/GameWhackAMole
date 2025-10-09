@@ -409,13 +409,22 @@
     cleanupCell(cell, idx);
     cell.classList.add('missed');
     setTimeout(() => cell.classList.remove('missed'), 280);
+
+    const type = mole.type || 'normal';
+    molesResolved += 1;
+
+    if (type === 'bomb') {
+      setStatus('Nice dodge! The bomb fizzled out.', 'info');
+      if (running) scheduleNextSpawn(120);
+      return;
+    }
+
     maxStreak = Math.max(maxStreak, streak);
     streak = 0;
     updateMultiplier();
     misses += 1;
     audio.playMiss();
     setStatus('Missed! The mole got away.', 'warn');
-    molesResolved += 1;
     if (!applyLifeLoss(MISS_LIFE_LOSS)) return;
     if (running) scheduleNextSpawn(120);
   }
